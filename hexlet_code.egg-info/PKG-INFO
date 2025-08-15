@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: hexlet-code
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: flask
+Requires-Dist: gunicorn
+Requires-Dist: python-dotenv
+
+### Hexlet tests and linter status:
+[![Actions Status](https://github.com/Anik0000000/python-project-83/actions/workflows/hexlet-check.yml/badge.svg)](https://github.com/Anik0000000/python-project-83/actions)
