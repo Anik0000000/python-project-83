@@ -1,8 +1,7 @@
-#!/usr/bin/env bash  
+#!/usr/bin/env bash
 
-# Установка uv  
-curl -LsSf https://astral.sh/uv/install.sh | sh  
-source $HOME/.cargo/env  
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.cargo/env
 
-# Установка зависимостей  
-make install  
+make install
+psql -a -d $DATABASE_URL -f database.sql
