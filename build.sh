@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+set -e
 
+# Установка uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.cargo/env
 
-make install && psql -a -d $DATABASE_URL -f database.sql
+# Установка зависимостей
+uv sync
