@@ -1,12 +1,12 @@
-from flask import Flask  
-import os  
-from dotenv import load_dotenv  
+from flask import Flask, render_template
+import os
+from dotenv import load_dotenv
 
-load_dotenv()  
+load_dotenv()
 
-app = Flask(__name__)  
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")  
+app = Flask(__name__)
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
 
-@app.route("/")  
-def home():  
-    return "Hello, Hexlet!"  
+@app.route("/")
+def home():
+    return render_template("index.html")  # Рендерим шаблон
