@@ -12,14 +12,72 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 
 def get_db_connection():
-    """Подключение к базе данных"""
+    """Подключение к базе данных с приоритетом на DATABASE_URL от Render"""
     try:
         if os.getenv('DATABASE_URL'):
             return psycopg2.connect(os.getenv('DATABASE_URL'))
-        
+       
     except Exception as e:
         print(f"Database connection error: {e}")
         raise
+
+def init_database():
+    """Инициализация базы данных - создание таблиц если их нет"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Проверяем существование таблицы urls
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'urls'
+            )
+        """)
+        urls_exists = cur.fetchone()[0]
+        
+        if not urls_exists:
+            print("Creating urls table...")
+            cur.execute("""
+                CREATE TABLE urls (
+                    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                    name VARCHAR(255) UNIQUE NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+        
+        # Проверяем существование таблицы url_checks
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'url_checks'
+            )
+        """)
+        checks_exists = cur.fetchone()[0]
+        
+        if not checks_exists:
+            print("Creating url_checks table...")
+            cur.execute("""
+                CREATE TABLE url_checks (
+                    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                    url_id BIGINT REFERENCES urls(id) ON DELETE CASCADE,
+                    status_code INTEGER,
+                    h1 VARCHAR(255),
+                    title VARCHAR(255),
+                    description TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("Database initialized successfully")
+        
+    except Exception as e:
+        print(f"Database initialization error: {e}")
 
 def normalize_url(url):
     parsed_url = urlparse(url)
@@ -33,6 +91,9 @@ def validate_url(url):
     if not validators.url(url):
         return "Некорректный URL"
     return None
+
+# Инициализируем базу данных при запуске
+init_database()
 
 @app.route('/')
 def index():
