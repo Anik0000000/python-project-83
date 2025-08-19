@@ -12,41 +12,41 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 
 def get_db_connection():
+    # На Render.com DATABASE_URL уже установлен правильно
+    # Локально используем настройки из .env
     DATABASE_URL = os.getenv('DATABASE_URL')
-    return psycopg2.connect(DATABASE_URL)
+    if DATABASE_URL:
+        return psycopg2.connect(DATABASE_URL)
+    else:
+        # Локальная разработка
+        return psycopg2.connect(
+            dbname='page_analyzer',
+            user='page_analyzer_user',
+            password='e81d0a60703d',
+            host='localhost',
+            port='5432'
+        )
 
 def init_database():
-    """Инициализация базы данных из database.sql"""
+    """Инициализация базы данных"""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Проверяем, существует ли таблица urls
+        # Создаем таблицу если не существует
         cur.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = 'urls'
+            CREATE TABLE IF NOT EXISTS urls (
+                id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                name VARCHAR(255) UNIQUE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        table_exists = cur.fetchone()[0]
-        
-        if not table_exists:
-            print("Создание таблиц из database.sql...")
-            # Читаем и выполняем SQL файл
-            with open('database.sql', 'r') as f:
-                sql_commands = f.read()
-            cur.execute(sql_commands)
-            conn.commit()
-            print("Таблицы успешно созданы")
-        else:
-            print("Таблицы уже существуют")
-            
+        conn.commit()
         cur.close()
         conn.close()
-        
+        print("Database initialized successfully")
     except Exception as e:
-        print(f"Ошибка инициализации базы данных: {e}")
+        print(f"Database initialization error: {e}")
 
 def normalize_url(url):
     parsed_url = urlparse(url)
@@ -61,7 +61,7 @@ def validate_url(url):
         return "Некорректный URL"
     return None
 
-# Инициализируем базу данных при импорте модуля
+# Инициализируем базу данных
 init_database()
 
 @app.route('/')

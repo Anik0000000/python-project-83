@@ -5,6 +5,6 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 source $HOME/.local/bin/env
 
 # Install dependencies
-make install
+uv sync
 
-echo "Build completed successfully. Database will be initialized on first request."
+echo "Build completed successfully"
