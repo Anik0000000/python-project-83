@@ -1,7 +1,7 @@
 import os
 from flask import Flask, render_template, request, redirect, url_for, flash
 from dotenv import load_dotenv
-import psycopg2
+import psycopg
 from datetime import datetime
 from urllib.parse import urlparse
 import validators
@@ -14,11 +14,18 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 
 def get_db_connection():
-    """Подключение к базе данных"""
+    """Подключение к базе данных с использованием psycopg3"""
     try:
         if os.getenv('DATABASE_URL'):
-            return psycopg2.connect(os.getenv('DATABASE_URL'))
-       
+            return psycopg.connect(os.getenv('DATABASE_URL'))
+        else:
+            return psycopg.connect(
+                dbname='page_analyzer',
+                user='page_analyzer_user',
+                password='e81d0a60703d',
+                host='localhost',
+                port='5432'
+            )
     except Exception as e:
         print(f"Database connection error: {e}")
         raise
@@ -28,10 +35,9 @@ def init_database():
     conn = None
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
         
         # Создаем таблицу urls если не существует
-        cur.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS urls (
                 id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
                 name VARCHAR(255) UNIQUE NOT NULL,
@@ -40,7 +46,7 @@ def init_database():
         """)
         
         # Создаем таблицу url_checks если не существует
-        cur.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS url_checks (
                 id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
                 url_id BIGINT REFERENCES urls(id) ON DELETE CASCADE,
@@ -59,7 +65,6 @@ def init_database():
         print(f"Database initialization warning: {e}")
     finally:
         if conn:
-            cur.close()
             conn.close()
 
 def normalize_url(url):
@@ -131,24 +136,24 @@ def add_url():
     
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
         
-        cur.execute("SELECT id FROM urls WHERE name = %s", (normalized_url,))
-        existing_url = cur.fetchone()
+        # Проверяем существование URL
+        result = conn.execute("SELECT id FROM urls WHERE name = %s", (normalized_url,))
+        existing_url = result.fetchone()
         
         if existing_url:
             url_id = existing_url[0]
             flash('Страница уже существует', 'info')
         else:
-            cur.execute(
+            # Добавляем новый URL
+            result = conn.execute(
                 "INSERT INTO urls (name, created_at) VALUES (%s, %s) RETURNING id",
                 (normalized_url, datetime.now())
             )
-            url_id = cur.fetchone()[0]
+            url_id = result.fetchone()[0]
             flash('Страница успешно добавлена', 'success')
         
         conn.commit()
-        cur.close()
         conn.close()
         return redirect(url_for('url_detail', id=url_id))
         
@@ -160,20 +165,19 @@ def add_url():
 def urls_list():
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
         
         # Проверяем существование таблицы url_checks
-        cur.execute("""
+        result = conn.execute("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables 
                 WHERE table_schema = 'public' 
                 AND table_name = 'url_checks'
             )
         """)
-        checks_table_exists = cur.fetchone()[0]
+        checks_table_exists = result.fetchone()[0]
         
         if checks_table_exists:
-            cur.execute("""
+            result = conn.execute("""
                 SELECT 
                     u.id, 
                     u.name, 
@@ -188,7 +192,7 @@ def urls_list():
             """)
         else:
             # Если таблицы проверок нет, показываем только URLs
-            cur.execute("""
+            result = conn.execute("""
                 SELECT 
                     id, 
                     name, 
@@ -198,9 +202,8 @@ def urls_list():
                 ORDER BY id DESC
             """)
         
-        urls = cur.fetchall()
+        urls = result.fetchall()
         
-        cur.close()
         conn.close()
         return render_template('urls.html', urls=urls)
         
@@ -212,38 +215,36 @@ def urls_list():
 def url_detail(id):
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
         
         # Получаем информацию о URL
-        cur.execute("SELECT id, name, created_at FROM urls WHERE id = %s", (id,))
-        url = cur.fetchone()
+        result = conn.execute("SELECT id, name, created_at FROM urls WHERE id = %s", (id,))
+        url = result.fetchone()
         
         if not url:
             flash('Страница не найдена', 'danger')
             return redirect(url_for('index'))
         
         # Проверяем существование таблицы url_checks
-        cur.execute("""
+        result = conn.execute("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables 
                 WHERE table_schema = 'public' 
                 AND table_name = 'url_checks'
             )
         """)
-        checks_table_exists = cur.fetchone()[0]
+        checks_table_exists = result.fetchone()[0]
         
         checks = []
         if checks_table_exists:
             # Получаем проверки для этого URL
-            cur.execute("""
+            result = conn.execute("""
                 SELECT id, status_code, h1, title, description, created_at 
                 FROM url_checks 
                 WHERE url_id = %s 
                 ORDER BY id DESC
             """, (id,))
-            checks = cur.fetchall()
+            checks = result.fetchall()
         
-        cur.close()
         conn.close()
         
         return render_template('url_detail.html', url=url, checks=checks)
@@ -256,11 +257,10 @@ def url_detail(id):
 def check_url(id):
     try:
         conn = get_db_connection()
-        cur = conn.cursor()
         
         # Получаем URL для проверки
-        cur.execute("SELECT name FROM urls WHERE id = %s", (id,))
-        url_result = cur.fetchone()
+        result = conn.execute("SELECT name FROM urls WHERE id = %s", (id,))
+        url_result = result.fetchone()
         
         if not url_result:
             flash('Страница не найдена', 'danger')
@@ -276,7 +276,7 @@ def check_url(id):
             return redirect(url_for('url_detail', id=id))
         
         # Сохраняем результаты проверки
-        cur.execute(
+        conn.execute(
             """INSERT INTO url_checks 
                (url_id, status_code, h1, title, description, created_at) 
                VALUES (%s, %s, %s, %s, %s, %s)""",
@@ -285,7 +285,6 @@ def check_url(id):
         )
         
         conn.commit()
-        cur.close()
         conn.close()
         
         flash('Страница успешно проверена', 'success')
