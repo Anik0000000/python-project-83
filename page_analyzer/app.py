@@ -18,7 +18,6 @@ def get_db_connection():
         if os.getenv('DATABASE_URL'):
             return psycopg2.connect(os.getenv('DATABASE_URL'))
     
-        )
     except Exception as e:
         print(f"Database connection error: {e}")
         raise
