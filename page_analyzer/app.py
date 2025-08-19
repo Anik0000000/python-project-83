@@ -17,14 +17,7 @@ def get_db_connection():
         # В первую очередь используем DATABASE_URL от Render
         if os.getenv('DATABASE_URL'):
             return psycopg2.connect(os.getenv('DATABASE_URL'))
-        
-        # Для локальной разработки (если DATABASE_URL не установлен)
-        return psycopg2.connect(
-            dbname='page_analyzer',
-            user='page_analyzer_user',
-            password='e81d0a60703d',
-            host='localhost',
-            port='5432'
+    
         )
     except Exception as e:
         print(f"Database connection error: {e}")
