@@ -18,8 +18,8 @@
             <tr>
                 <td>{{ url[0] }}</td>
                 <td><a href="{{ url_for('url_detail', id=url[0]) }}">{{ url[1] }}</a></td>
-                <td></td>
-                <td></td>
+                <td>{{ url[2].strftime('%Y-%m-%d') if url[2] else '' }}</td>
+                <td>{{ url[3] if url[3] else '' }}</td>
             </tr>
             {% endfor %}
         </tbody>
