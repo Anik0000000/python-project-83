@@ -5,6 +5,8 @@ import psycopg2
 from datetime import datetime
 from urllib.parse import urlparse
 import validators
+import requests
+from bs4 import BeautifulSoup
 
 load_dotenv()
 
@@ -12,7 +14,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 
 def get_db_connection():
-    """Подключение к базе данных с приоритетом на DATABASE_URL от Render"""
+    """Подключение к базе данных"""
     try:
         if os.getenv('DATABASE_URL'):
             return psycopg2.connect(os.getenv('DATABASE_URL'))
@@ -23,61 +25,42 @@ def get_db_connection():
 
 def init_database():
     """Инициализация базы данных - создание таблиц если их нет"""
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Проверяем существование таблицы urls
+        # Создаем таблицу urls если не существует
         cur.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = 'urls'
+            CREATE TABLE IF NOT EXISTS urls (
+                id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                name VARCHAR(255) UNIQUE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        urls_exists = cur.fetchone()[0]
         
-        if not urls_exists:
-            print("Creating urls table...")
-            cur.execute("""
-                CREATE TABLE urls (
-                    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-                    name VARCHAR(255) UNIQUE NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-        
-        # Проверяем существование таблицы url_checks
+        # Создаем таблицу url_checks если не существует
         cur.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = 'url_checks'
+            CREATE TABLE IF NOT EXISTS url_checks (
+                id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                url_id BIGINT REFERENCES urls(id) ON DELETE CASCADE,
+                status_code INTEGER,
+                h1 VARCHAR(255),
+                title VARCHAR(255),
+                description TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        checks_exists = cur.fetchone()[0]
-        
-        if not checks_exists:
-            print("Creating url_checks table...")
-            cur.execute("""
-                CREATE TABLE url_checks (
-                    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-                    url_id BIGINT REFERENCES urls(id) ON DELETE CASCADE,
-                    status_code INTEGER,
-                    h1 VARCHAR(255),
-                    title VARCHAR(255),
-                    description TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
         
         conn.commit()
-        cur.close()
-        conn.close()
-        print("Database initialized successfully")
+        print("Database tables created or already exist")
         
     except Exception as e:
-        print(f"Database initialization error: {e}")
+        print(f"Database initialization warning: {e}")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
 
 def normalize_url(url):
     parsed_url = urlparse(url)
@@ -91,6 +74,42 @@ def validate_url(url):
     if not validators.url(url):
         return "Некорректный URL"
     return None
+
+def analyze_url(url):
+    """Анализ URL и извлечение информации"""
+    try:
+        # Выполняем запрос с таймаутом
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # Проверяем статус код
+        
+        # Парсим HTML
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Извлекаем заголовок
+        title_tag = soup.find('title')
+        title = title_tag.text.strip() if title_tag else ''
+        
+        # Извлекаем h1
+        h1_tag = soup.find('h1')
+        h1 = h1_tag.text.strip() if h1_tag else ''
+        
+        # Извлекаем meta description
+        meta_desc = soup.find('meta', attrs={'name': 'description'})
+        description = meta_desc['content'].strip() if meta_desc and meta_desc.get('content') else ''
+        
+        return {
+            'status_code': response.status_code,
+            'title': title[:255],
+            'h1': h1[:255],
+            'description': description
+        }
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Request error: {e}")
+        return None
+    except Exception as e:
+        print(f"Analysis error: {e}")
+        return None
 
 # Инициализируем базу данных при запуске
 init_database()
@@ -143,19 +162,42 @@ def urls_list():
         conn = get_db_connection()
         cur = conn.cursor()
         
+        # Проверяем существование таблицы url_checks
         cur.execute("""
-            SELECT 
-                u.id, 
-                u.name, 
-                uc.created_at as last_check_date,
-                uc.status_code
-            FROM urls u
-            LEFT JOIN url_checks uc ON u.id = uc.url_id 
-            AND uc.id = (
-                SELECT MAX(id) FROM url_checks WHERE url_id = u.id
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'url_checks'
             )
-            ORDER BY u.id DESC
         """)
+        checks_table_exists = cur.fetchone()[0]
+        
+        if checks_table_exists:
+            cur.execute("""
+                SELECT 
+                    u.id, 
+                    u.name, 
+                    uc.created_at as last_check_date,
+                    uc.status_code
+                FROM urls u
+                LEFT JOIN url_checks uc ON u.id = uc.url_id 
+                AND uc.id = (
+                    SELECT MAX(id) FROM url_checks WHERE url_id = u.id
+                )
+                ORDER BY u.id DESC
+            """)
+        else:
+            # Если таблицы проверок нет, показываем только URLs
+            cur.execute("""
+                SELECT 
+                    id, 
+                    name, 
+                    NULL as last_check_date,
+                    NULL as status_code
+                FROM urls 
+                ORDER BY id DESC
+            """)
+        
         urls = cur.fetchall()
         
         cur.close()
@@ -180,14 +222,26 @@ def url_detail(id):
             flash('Страница не найдена', 'danger')
             return redirect(url_for('index'))
         
-        # Получаем проверки для этого URL
+        # Проверяем существование таблицы url_checks
         cur.execute("""
-            SELECT id, status_code, h1, title, description, created_at 
-            FROM url_checks 
-            WHERE url_id = %s 
-            ORDER BY id DESC
-        """, (id,))
-        checks = cur.fetchall()
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'url_checks'
+            )
+        """)
+        checks_table_exists = cur.fetchone()[0]
+        
+        checks = []
+        if checks_table_exists:
+            # Получаем проверки для этого URL
+            cur.execute("""
+                SELECT id, status_code, h1, title, description, created_at 
+                FROM url_checks 
+                WHERE url_id = %s 
+                ORDER BY id DESC
+            """, (id,))
+            checks = cur.fetchall()
         
         cur.close()
         conn.close()
@@ -204,16 +258,30 @@ def check_url(id):
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Проверяем существование URL
-        cur.execute("SELECT id FROM urls WHERE id = %s", (id,))
-        if not cur.fetchone():
+        # Получаем URL для проверки
+        cur.execute("SELECT name FROM urls WHERE id = %s", (id,))
+        url_result = cur.fetchone()
+        
+        if not url_result:
             flash('Страница не найдена', 'danger')
             return redirect(url_for('index'))
         
-        # Создаем новую проверку (пока только базовые поля)
+        url = url_result[0]
+        
+        # Анализируем URL
+        analysis_result = analyze_url(url)
+        
+        if not analysis_result:
+            flash('Произошла ошибка при проверке', 'danger')
+            return redirect(url_for('url_detail', id=id))
+        
+        # Сохраняем результаты проверки
         cur.execute(
-            "INSERT INTO url_checks (url_id, created_at) VALUES (%s, %s)",
-            (id, datetime.now())
+            """INSERT INTO url_checks 
+               (url_id, status_code, h1, title, description, created_at) 
+               VALUES (%s, %s, %s, %s, %s, %s)""",
+            (id, analysis_result['status_code'], analysis_result['h1'], 
+             analysis_result['title'], analysis_result['description'], datetime.now())
         )
         
         conn.commit()
