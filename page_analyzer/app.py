@@ -9,16 +9,16 @@ import validators
 load_dotenv()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
 
 def get_db_connection():
-    # На Render.com DATABASE_URL уже установлен правильно
-    # Локально используем настройки из .env
-    DATABASE_URL = os.getenv('DATABASE_URL')
-    if DATABASE_URL:
-        return psycopg2.connect(DATABASE_URL)
-    else:
-        # Локальная разработка
+    """Подключение к базе данных с приоритетом на DATABASE_URL от Render"""
+    try:
+        # В первую очередь используем DATABASE_URL от Render
+        if os.getenv('DATABASE_URL'):
+            return psycopg2.connect(os.getenv('DATABASE_URL'))
+        
+        # Для локальной разработки (если DATABASE_URL не установлен)
         return psycopg2.connect(
             dbname='page_analyzer',
             user='page_analyzer_user',
@@ -26,25 +26,41 @@ def get_db_connection():
             host='localhost',
             port='5432'
         )
+    except Exception as e:
+        print(f"Database connection error: {e}")
+        raise
 
 def init_database():
-    """Инициализация базы данных"""
+    """Инициализация базы данных - создание таблиц если их нет"""
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Создаем таблицу если не существует
+        # Проверяем существование таблицы
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS urls (
-                id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-                name VARCHAR(255) UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'urls'
             )
         """)
-        conn.commit()
+        table_exists = cur.fetchone()[0]
+        
+        if not table_exists:
+            print("Creating database tables...")
+            cur.execute("""
+                CREATE TABLE urls (
+                    id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                    name VARCHAR(255) UNIQUE NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+            print("Database tables created successfully")
+        
         cur.close()
         conn.close()
-        print("Database initialized successfully")
+        
     except Exception as e:
         print(f"Database initialization error: {e}")
 
@@ -61,7 +77,7 @@ def validate_url(url):
         return "Некорректный URL"
     return None
 
-# Инициализируем базу данных
+# Инициализируем базу данных при запуске
 init_database()
 
 @app.route('/')
