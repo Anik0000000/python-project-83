@@ -1,16 +1,16 @@
-PORT ?= 8000  
+PORT ?= 8000
 
-install:  
-	uv sync  
+install:
+	uv sync
 
-dev:  
-	uv run flask --debug --app page_analyzer:app run  
+dev:
+	uv run flask --debug --app page_analyzer:app run
 
-start:  
-	uv run gunicorn -w 5 -b 0.0.0.0:$(PORT) page_analyzer:app  
+start:
+	uv run gunicorn -w 5 -b 0.0.0.0:$(PORT) page_analyzer:app
 
 render-start:
-	chmod +x start.sh && ./start.sh
+	gunicorn -w 5 -b 0.0.0.0:$(PORT) page_analyzer:app
 
-build:  
-	./build.sh  
+build:
+	./build.sh

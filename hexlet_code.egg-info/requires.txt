@@ -1,4 +1,8 @@
-flask
-psycopg2-binary
-python-dotenv
-validators
+flask==3.0.0
+python-dotenv==1.0.0
+gunicorn==21.2.0
+psycopg2-binary==2.9.9
+validators==0.22.0
+requests==2.31.0
+beautifulsoup4==4.12.2
+python-dateutil==2.8.2

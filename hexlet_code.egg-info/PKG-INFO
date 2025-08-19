@@ -4,10 +4,14 @@ Version: 0.1.0
 Summary: Add your description here
 Requires-Python: >=3.12
 Description-Content-Type: text/markdown
-Requires-Dist: flask
-Requires-Dist: psycopg2-binary
-Requires-Dist: python-dotenv
-Requires-Dist: validators
+Requires-Dist: flask==3.0.0
+Requires-Dist: python-dotenv==1.0.0
+Requires-Dist: gunicorn==21.2.0
+Requires-Dist: psycopg2-binary==2.9.9
+Requires-Dist: validators==0.22.0
+Requires-Dist: requests==2.31.0
+Requires-Dist: beautifulsoup4==4.12.2
+Requires-Dist: python-dateutil==2.8.2
 
 ### Hexlet tests and linter status:
 [![Actions Status](https://github.com/Anik0000000/python-project-83/actions/workflows/hexlet-check.yml/badge.svg)](https://github.com/Anik0000000/python-project-83/actions)
