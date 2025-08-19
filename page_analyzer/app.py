@@ -13,9 +13,40 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 
 def get_db_connection():
     DATABASE_URL = os.getenv('DATABASE_URL')
-    conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = True
-    return conn
+    return psycopg2.connect(DATABASE_URL)
+
+def init_database():
+    """Инициализация базы данных из database.sql"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Проверяем, существует ли таблица urls
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'urls'
+            )
+        """)
+        table_exists = cur.fetchone()[0]
+        
+        if not table_exists:
+            print("Создание таблиц из database.sql...")
+            # Читаем и выполняем SQL файл
+            with open('database.sql', 'r') as f:
+                sql_commands = f.read()
+            cur.execute(sql_commands)
+            conn.commit()
+            print("Таблицы успешно созданы")
+        else:
+            print("Таблицы уже существуют")
+            
+        cur.close()
+        conn.close()
+        
+    except Exception as e:
+        print(f"Ошибка инициализации базы данных: {e}")
 
 def normalize_url(url):
     parsed_url = urlparse(url)
@@ -29,6 +60,9 @@ def validate_url(url):
     if not validators.url(url):
         return "Некорректный URL"
     return None
+
+# Инициализируем базу данных при импорте модуля
+init_database()
 
 @app.route('/')
 def index():
@@ -65,6 +99,7 @@ def add_url():
             url_id = cur.fetchone()[0]
             flash('Страница успешно добавлена', 'success')
         
+        conn.commit()
         cur.close()
         conn.close()
         return redirect(url_for('url_detail', id=url_id))
