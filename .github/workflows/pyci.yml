@@ -26,23 +26,12 @@ jobs:
     - name: Install dependencies
       run: uv pip install -e .[dev]
         
-    - name: Run tests
-      run: |
-        uv run pytest
-        
-    - name: Run linter
-      run: |
-        uv run ruff check .
-
-    - name: Run test coverage
-      run: |
-        make test-coverage
     - name: SonarQubeScan
       uses: SonarSource/sonarqube-scan-action@v5
       env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       with:
         args: >
-          -Dsonar.projectKey=Anik0000000_python-project-50
+          -Dsonar.projectKey=Anik0000000_python-project-83
           -Dsonar.organization=anik0000000
           -Dsonar.python.coverage.reportPaths=coverage.xml

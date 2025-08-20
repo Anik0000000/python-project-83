@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import validators
 import requests
 from bs4 import BeautifulSoup
+import re
 
 load_dotenv()
 
@@ -18,54 +19,10 @@ def get_db_connection():
     try:
         if os.getenv('DATABASE_URL'):
             return psycopg.connect(os.getenv('DATABASE_URL'))
-        else:
-            return psycopg.connect(
-                dbname='page_analyzer',
-                user='page_analyzer_user',
-                password='e81d0a60703d',
-                host='localhost',
-                port='5432'
-            )
+      
     except Exception as e:
         print(f"Database connection error: {e}")
         raise
-
-def init_database():
-    """Инициализация базы данных - создание таблиц если их нет"""
-    conn = None
-    try:
-        conn = get_db_connection()
-        
-        # Создаем таблицу urls если не существует
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS urls (
-                id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-                name VARCHAR(255) UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Создаем таблицу url_checks если не существует
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS url_checks (
-                id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-                url_id BIGINT REFERENCES urls(id) ON DELETE CASCADE,
-                status_code INTEGER,
-                h1 VARCHAR(255),
-                title VARCHAR(255),
-                description TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        conn.commit()
-        print("Database tables created or already exist")
-        
-    except Exception as e:
-        print(f"Database initialization warning: {e}")
-    finally:
-        if conn:
-            conn.close()
 
 def normalize_url(url):
     parsed_url = urlparse(url)
@@ -81,31 +38,43 @@ def validate_url(url):
     return None
 
 def analyze_url(url):
-    """Анализ URL и извлечение информации"""
+    """Анализ URL и извлечение SEO-информации"""
     try:
-        # Выполняем запрос с таймаутом
-        response = requests.get(url, timeout=10)
+        # Выполняем запрос с таймаутом и user-agent
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()  # Проверяем статус код
         
         # Парсим HTML
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Извлекаем заголовок
+        # Извлекаем заголовок (title)
         title_tag = soup.find('title')
-        title = title_tag.text.strip() if title_tag else ''
+        title = title_tag.get_text().strip() if title_tag else ''
         
-        # Извлекаем h1
+        # Извлекаем h1 (берем только первый, если несколько)
         h1_tag = soup.find('h1')
-        h1 = h1_tag.text.strip() if h1_tag else ''
+        h1 = h1_tag.get_text().strip() if h1_tag else ''
         
         # Извлекаем meta description
         meta_desc = soup.find('meta', attrs={'name': 'description'})
-        description = meta_desc['content'].strip() if meta_desc and meta_desc.get('content') else ''
+        description = ''
+        if meta_desc and meta_desc.get('content'):
+            description = meta_desc['content'].strip()
         
+        # Альтернативные способы поиска description
+        if not description:
+            meta_desc = soup.find('meta', attrs={'property': 'og:description'})
+            if meta_desc and meta_desc.get('content'):
+                description = meta_desc['content'].strip()
+        
+        # Ограничиваем длину для базы данных
         return {
             'status_code': response.status_code,
-            'title': title[:255],
-            'h1': h1[:255],
+            'title': title[:255] if title else '',
+            'h1': h1[:255] if h1 else '',
             'description': description
         }
         
@@ -115,9 +84,6 @@ def analyze_url(url):
     except Exception as e:
         print(f"Analysis error: {e}")
         return None
-
-# Инициализируем базу данных при запуске
-init_database()
 
 @app.route('/')
 def index():
@@ -166,44 +132,21 @@ def urls_list():
     try:
         conn = get_db_connection()
         
-        # Проверяем существование таблицы url_checks
         result = conn.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = 'url_checks'
+            SELECT 
+                u.id, 
+                u.name, 
+                uc.created_at as last_check_date,
+                uc.status_code
+            FROM urls u
+            LEFT JOIN url_checks uc ON u.id = uc.url_id 
+            AND uc.id = (
+                SELECT MAX(id) FROM url_checks WHERE url_id = u.id
             )
+            ORDER BY u.id DESC
         """)
-        checks_table_exists = result.fetchone()[0]
-        
-        if checks_table_exists:
-            result = conn.execute("""
-                SELECT 
-                    u.id, 
-                    u.name, 
-                    uc.created_at as last_check_date,
-                    uc.status_code
-                FROM urls u
-                LEFT JOIN url_checks uc ON u.id = uc.url_id 
-                AND uc.id = (
-                    SELECT MAX(id) FROM url_checks WHERE url_id = u.id
-                )
-                ORDER BY u.id DESC
-            """)
-        else:
-            # Если таблицы проверок нет, показываем только URLs
-            result = conn.execute("""
-                SELECT 
-                    id, 
-                    name, 
-                    NULL as last_check_date,
-                    NULL as status_code
-                FROM urls 
-                ORDER BY id DESC
-            """)
         
         urls = result.fetchall()
-        
         conn.close()
         return render_template('urls.html', urls=urls)
         
@@ -224,27 +167,15 @@ def url_detail(id):
             flash('Страница не найдена', 'danger')
             return redirect(url_for('index'))
         
-        # Проверяем существование таблицы url_checks
+        # Получаем проверки для этого URL
         result = conn.execute("""
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = 'url_checks'
-            )
-        """)
-        checks_table_exists = result.fetchone()[0]
+            SELECT id, status_code, h1, title, description, created_at 
+            FROM url_checks 
+            WHERE url_id = %s 
+            ORDER BY id DESC
+        """, (id,))
         
-        checks = []
-        if checks_table_exists:
-            # Получаем проверки для этого URL
-            result = conn.execute("""
-                SELECT id, status_code, h1, title, description, created_at 
-                FROM url_checks 
-                WHERE url_id = %s 
-                ORDER BY id DESC
-            """, (id,))
-            checks = result.fetchall()
-        
+        checks = result.fetchall()
         conn.close()
         
         return render_template('url_detail.html', url=url, checks=checks)
@@ -275,13 +206,17 @@ def check_url(id):
             flash('Произошла ошибка при проверке', 'danger')
             return redirect(url_for('url_detail', id=id))
         
-        # Сохраняем результаты проверки
+        # Сохраняем результаты проверки с SEO-данными
         conn.execute(
             """INSERT INTO url_checks 
                (url_id, status_code, h1, title, description, created_at) 
                VALUES (%s, %s, %s, %s, %s, %s)""",
-            (id, analysis_result['status_code'], analysis_result['h1'], 
-             analysis_result['title'], analysis_result['description'], datetime.now())
+            (id, 
+             analysis_result['status_code'], 
+             analysis_result['h1'], 
+             analysis_result['title'], 
+             analysis_result['description'], 
+             datetime.now())
         )
         
         conn.commit()
@@ -293,3 +228,6 @@ def check_url(id):
     except Exception as e:
         flash(f'Произошла ошибка при проверке страницы: {e}', 'danger')
         return redirect(url_for('url_detail', id=id))
+
+if __name__ == '__main__':
+    app.run(debug=True)
