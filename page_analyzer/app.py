@@ -2,6 +2,7 @@ import os
 from flask import Flask, render_template, request, redirect, url_for, flash
 from dotenv import load_dotenv
 import psycopg
+from psycopg import sql
 from datetime import datetime
 from urllib.parse import urlparse
 import validators
