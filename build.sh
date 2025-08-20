@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-
-# Install uv
+# скачиваем uv и запускаем команду установки зависимостей
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install dependencies
-uv sync
-
-echo "Build completed successfully"
+source $HOME/.local/bin/env
+make install

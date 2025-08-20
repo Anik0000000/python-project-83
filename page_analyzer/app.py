@@ -11,9 +11,8 @@ from bs4 import BeautifulSoup
 import re
 
 load_dotenv()
-
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 
 def get_db_connection():
     """Подключение к базе данных с использованием psycopg3"""
