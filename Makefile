@@ -17,7 +17,10 @@ build:
 	./build.sh
 
 lint:
-	uv run flake8 page_analyzer
+		uv run ruff check
+
+lint-fix:
+		uv run ruff check --fix
 
 test:
 	uv run pytest
