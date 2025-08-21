@@ -1,15 +1,16 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
-from dotenv import load_dotenv
 from datetime import datetime
 
+from dotenv import load_dotenv
+from flask import Flask, flash, redirect, render_template, request, url_for
+
 from .database import (
-    init_database,
-    add_url_to_db,
-    get_url_by_name,
-    get_all_urls,
-    get_url_by_id,
-    get_checks_by_url_id,
     add_url_check,
+    add_url_to_db,
+    get_all_urls,
+    get_checks_by_url_id,
+    get_url_by_id,
+    get_url_by_name,
+    init_database,
 )
 from .parser import analyze_url
 from .url import normalize_url, validate_url
