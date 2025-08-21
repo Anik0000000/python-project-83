@@ -105,7 +105,10 @@ def get_url_by_id(url_id):
     cur = conn.cursor()
 
     try:
-        cur.execute("SELECT id, name, created_at FROM urls WHERE id = %s", (url_id,))
+        cur.execute(
+            "SELECT id, name, created_at FROM urls WHERE id = %s",
+            (url_id,)
+        )
         return cur.fetchone()
     finally:
         cur.close()
