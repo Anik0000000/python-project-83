@@ -12,7 +12,8 @@ Page Analyzer is a website that analyzes specified pages for SEO readiness, simi
 [![PyCI](https://github.com/anik0000000/python-project-83/actions/workflows/pyci.yml/badge.svg)](https://github.com/anik0000000/python-project-83/actions/workflows/pyci.yml)
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=Anik0000000_python-project-83&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Anik0000000_python-project-83)
 
-[//]: # ([Демонстрация проекта на render.com]&#40;https://python-project-83-g9q6.onrender.comm&#41;)
+### Demonstration project on render.com
+https://python-project-83-g9q6.onrender.com
 
 ### Technologies Used:
 
